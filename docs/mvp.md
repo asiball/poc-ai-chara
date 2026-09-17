@@ -1,143 +1,138 @@
 # MVP
 
-目標: **「表情差分 3 枚で Claude Code と会話できる」**を、Windows で動くデスクトップアプリとして成立させる。
+目標: **「表情差分 3 枚で Claude Code と会話できる」**。自分用なので、動くことと確かめたいことを優先し、配布や見栄えは後回しにする。
 
 ---
 
-## 1. スコープ
+## 1. 最初に確かめること
 
-### 1.1 対象機能
+UI を作る前に、いちばん不確かな点を潰す。
 
-| # | 機能 | 内容 |
+| 確認項目 | 方法 | 結果の扱い |
 |---|---|---|
-| M1 | アプリ起動 | Tauri 2 アプリとして起動。Windows を第一対象、macOS は動作確認程度 |
-| M2 | Agent 接続 | `npx @agentclientprotocol/claude-agent-acp@<pinned>` を stdio で起動し、ACP `initialize` → `session/new` まで完了する |
-| M3 | 認証誘導 | 未認証なら ACP の authMethods を表示し、`terminal` 型は別ターミナルでログインコマンドを起動して終了を待つ。アプリはトークンに触れない |
-| M4 | cwd 選択 | フォルダピッカーで作業ディレクトリを選ぶ。前回値を記憶 |
-| M5 | メッセージ入力 | 入力欄から `session/prompt`(text のみ)。送信中は入力を無効化。Esc / ボタンで `session/cancel` |
-| M6 | 台詞表示 | `agent_message_chunk` を段落単位にページ分割し、タイプライター表示。オート送り既定。クリックでスキップ。ターン終了で ▼ |
-| M7 | 台詞 / 詳細の分離 | コードブロック・表・長いリストは台詞から除き「[コードを見る]」リンクにする。Developer Layer に全文 Markdown を表示 |
-| M8 | 表情切替 | Agent State(idle / thinking / speaking / tool_run / waiting_permission / done / error)→ `normal` / `thinking` / `happy` の 3 枚。無い表情は `normal` にフォールバック |
-| M9 | permission | `session/request_permission` を選択肢として表示。options をそのまま並べ、選択結果を返す。キーボード操作対応 |
-| M10 | tool call 表示 | Developer Layer に tool call カード(kind / title / status / locations)。`content.diff` は diff ビュー、terminal 出力はテキスト表示 |
-| M11 | エラー表示 | プロセス異常終了、JSON-RPC エラー、`refusal` を Developer Layer に生表示。Novel Layer には短い定型台詞 |
-| M12 | キャラクターパック | フォルダを指定して `character.json` + PNG 3 枚を読む。サンプルパックは画像を含まない雛形のみ同梱 |
-| M13 | 設定 | `agents.json`(起動コマンド・引数・env)、node / npx のパス上書き、キャラクターパックのパス、オート送り ON/OFF |
-| M14 | 状態インジケータ | 名前欄横に「実行中 (Bash)」「承認待ち」「完了」など、Agent State と現在の tool title を表示 |
-
-### 1.2 非対象(MVP から明示的に外す)
-
-- Live2D / VRM / 瞬きなどのアニメーション
-- TTS、音声入力
-- LLM による感情判定、テキスト感情推定、Agent 自身による表情指定
-- 複数 Agent の同時実行、Agent 間レビュー
-- Codex / Gemini CLI の動作保証(`agents.json` に書けば起動はできるが、MVP では検証しない)
-- セッション履歴の一覧・再開 UI(`session/load` は将来)
-- ACP `fs/*` / `terminal/*` のクライアント側実装(capabilities で無効にする)
-- 画像添付、@-mention、slash command 補完
-- plan(`session/update: plan`)の描画(受信して保存はする)
-- リモート Agent(WebSocket transport)
-- キャラクターの口調変更、system prompt 注入
-- 自動アップデート、コード署名、インストーラの配布
-- macOS / Linux の動作保証
+| 自分の環境で、サブスクログインのまま claude-agent-acp が ACP で応答するか | Step 0 のスクリプト | NG なら API キーで再試行。両方 NG なら接続方式を再検討 |
+| permission 要求(`session/request_permission`)が届き、選択結果で処理が続くか | 同上(ファイル編集を頼む) | 届かない場合は `_meta.claudeCode.options.permissionMode` の既定を確認 |
+| `tool_call` の `content` に diff が乗るか | 同上 | 乗らなければ Edit の rawInput から自前で組む |
+| output style(`.claude/settings.local.json` の `outputStyle`)が ACP 経由でも効くか | 口調ファイルを置いて Step 0 を再実行 | 効かなければ `_meta.systemPrompt.append` を使う |
+| kill で `node` / `claude` の子プロセスが残らないか(Windows) | タスクマネージャ | 残るなら `taskkill /T` |
 
 ---
 
-## 2. 実装順
+## 2. スコープ
 
-リスクの高い部分(Agent プロセス起動と ACP 接続)を先に潰し、演出は最後に載せる。
+### 2.1 作るもの
 
-### Step 0: 接続スパイク(捨てるコード、1〜2 日)
+| # | 機能 |
+|---|---|
+| M1 | Node プロセスが `npx @agentclientprotocol/claude-agent-acp@<固定版>` を stdio で起動し、`initialize` → `session/new` まで通す |
+| M2 | 未認証なら authMethods を表示し、`terminal` 型のログインコマンドを案内する(アプリはトークンに触れない) |
+| M3 | 作業ディレクトリの指定(起動引数または設定ファイル) |
+| M4 | ブラウザ UI から `session/prompt`(text のみ)。送信中は入力を無効化。Esc で `session/cancel` |
+| M5 | `agent_message_chunk` を段落単位でページ分割し、タイプライター表示。オート送り既定、クリックでスキップ、ターン終了で ▼ |
+| M6 | コードブロック・表・長いリストは台詞から除いて「[コードを見る]」リンクにし、ログパネルに全文 Markdown を出す |
+| M7 | Agent の状態(idle / thinking / speaking / tool_run / waiting_permission / done / error)→ `normal` / `thinking` / `happy` の 3 枚。無い表情は `normal` にフォールバック |
+| M8 | `session/request_permission` を選択肢として表示し、選択結果を返す。数字キー / Enter / Esc |
+| M9 | ログパネルに tool call(kind / title / status)、diff、terminal 出力、エラー |
+| M10 | 瞬き(目閉じ差分)と口パク(口開き差分、タイプライター中のみ)。素材が無ければ何もしない |
+| M11 | 口調: プロジェクトの output style で設定する手順を README に書く。効かない場合は設定ファイルの `persona` を `_meta.systemPrompt.append` で渡す |
+| M12 | 名前欄横の状態インジケータ(「実行中 (Bash)」「承認待ち」など) |
 
-- Tauri 2 の最小アプリから Rust `process_host.rs` で `cmd /C npx @agentclientprotocol/claude-agent-acp@X` を起動し、stdout の行を WebView に流す
-- TS 側で `@agentclientprotocol/sdk` の `ClientSideConnection` を Tauri event 経由の Web Streams に接続し、`initialize` → `session/new` → `session/prompt("hello")` → `session/update` をコンソールに出す
-- 確認事項: Windows での起動、認証フロー(`terminal` 型)、kill で子プロセスが残らないか、`clientCapabilities` で fs / terminal を無効にしたときアダプタが Bash / Edit を自前実行するか
-- **ここで詰まったら ADR-0002 の代替案(Electron)を再検討する**。演出には一切着手しない
+### 2.2 作らないもの
 
-### Step 1: 接続層と Session Store
-
-- `AgentBackend` interface と `AcpBackend`
-- `agents.json` 読込、cwd ピッカー、接続 / 切断
-- Session Store(トランスクリプト正規化)、Agent State 導出
-- 単体テスト: ACP イベント列 → Session Store / Agent State の期待値
-
-### Step 2: Developer Layer(実用 UI を先に)
-
-- 全文トランスクリプト(Markdown、sanitize)
-- tool call カード、diff ビュー、terminal 出力、エラー表示
-- permission ダイアログ(選択肢ボタン、キーボード)
-- この時点で「地味だが使えるクライアント」として成立させる
-
-### Step 3: Novel Layer
-
-- 立ち絵、名前欄、メッセージウィンドウ
-- Segment 分割(speech / code / detail)、ページ分割、タイプライター、オート送り、スキップ
-- 選択肢 UI(permission)
-- 状態インジケータ
-
-### Step 4: キャラクターパックと表情
-
-- `character.json` 読込・検証、フォールバック
-- Agent State → 表情、クロスフェード、`done` のホールドと `idle` への復帰、最低表示時間
-
-### Step 5: 設定と仕上げ
-
-- 設定画面(agents.json 編集、パス上書き、パック選択、オート送り)
-- Windows ビルド(NSIS)、README の手順を実機で検証
+- Live2D / VRM、TTS、音声入力
+- LLM による感情判定、テキスト感情推定
+- 複数 Agent 同時実行、Agent ごとのキャラ割り当て(設定上は可能でも検証しない)
+- Codex / Gemini CLI の動作保証
+- セッション履歴の一覧・再開 UI
+- ACP `fs/*` / `terminal/*` のクライアント側実装(capabilities で無効にし、Agent に任せる)
+- 画像添付、@-mention、slash command 補完、plan の描画
+- デスクトップアプリ化(Tauri / Electron)、インストーラ、配布
+- Windows 以外の動作保証
 
 ---
 
-## 3. 受け入れ条件
+## 3. 実装順
+
+### Step 0: 接続確認スクリプト(UI なし)
+
+- `scripts/acp-smoke.ts` のような 1 ファイル。`@agentclientprotocol/sdk` の `ClientSideConnection` で `npx @agentclientprotocol/claude-agent-acp@X.Y.Z` を子プロセス起動
+- `initialize` → 必要なら authMethods を表示して終了 → `session/new({ cwd })` → `session/prompt("このリポジトリの構成を説明して")` → `session/update` を種類ごとに整形してコンソールに出す
+- `session/request_permission` が来たら標準入力で番号を選ばせて返す
+- 「ファイルを 1 つ作って」と頼み、permission と `tool_call.content.diff` が流れることを見る
+- Windows の `npx.cmd` は Node の `spawn` で `shell: true` が必要(CVE-2024-27980 以降)。または `npx` の実体パスを解決して `node` で直起動
+- **§1 の確認項目をここで全部潰す。** 演出には着手しない
+
+### Step 1: 接続層とセッション状態
+
+- `AgentBackend` interface と `AcpBackend`(Step 0 のコードを整理)
+- Node 側で ACP クライアントを動かし、ブラウザとは WebSocket で `AgentEvent` をやり取りする
+- トランスクリプト(Session Store)と、そこから導出する Agent State
+- テスト: ACP イベント列 → Session Store / Agent State の期待値
+
+### Step 2: ログパネル(実用側を先に)
+
+- 全文 Markdown(sanitize)、tool call カード、diff、terminal 出力、エラー
+- permission の選択肢(まずは普通のボタン)
+- ここで「地味だが使えるクライアント」にする
+
+### Step 3: ノベル UI
+
+- 立ち絵、名前欄、メッセージウィンドウ、選択肢、状態インジケータ
+- Markdown → 台詞 / コード / 詳細の振り分け、ページ分割、タイプライター、オート送り、スキップ
+
+### Step 4: 表情とアニメーション
+
+- `character.json` 読込、Agent State → 表情、クロスフェード、`done` のホールドと `idle` 復帰
+- 瞬き、口パク、待機時の軽い揺れ
+
+### Step 5: 口調
+
+- output style ファイルの雛形(`keep-coding-instructions: true`、一人称・語尾・呼び方だけ)
+- 効かない場合のフォールバック(`_meta.systemPrompt.append`)
+
+---
+
+## 4. 受け入れ条件
 
 ### 接続
 
-- [ ] Windows 11 のクリーン環境(Node 22 と `claude` インストール済み、`claude auth login` 済み)で、アプリ起動 → cwd 選択 → 「接続済み」表示まで 10 秒以内に到達する
-- [ ] 未認証の環境で、アプリが authMethods を表示し、ログインコマンドを別ターミナルで起動し、完了後に再接続できる。アプリの設定ファイル・ログにトークン文字列が一切残らない
-- [ ] `ANTHROPIC_API_KEY` を `agents.json` の env に設定した場合も接続できる
-- [ ] アプリ終了後に `node` / `claude` の子プロセスが残らない(タスクマネージャで確認)
-- [ ] Agent プロセスが異常終了した場合、UI がフリーズせずエラーを表示し、再接続ボタンが機能する
+- [ ] Step 0 のスクリプトが、サブスクログイン済みの環境で `end_turn` まで到達する
+- [ ] 同じスクリプトが `ANTHROPIC_API_KEY` 環境変数でも到達する
+- [ ] 未認証の環境で authMethods が表示され、案内どおりログインすると次回は通る。ログ・設定ファイルにトークン文字列が残らない
+- [ ] 終了後に `node` / `claude` の子プロセスが残らない
+- [ ] Agent プロセスが落ちても UI が固まらず、エラーが表示され、再接続できる
 
 ### 会話
 
-- [ ] 「このリポジトリの構成を説明して」と送ると、Agent の応答が段落ごとにタイプライター表示され、コードブロックは「[コードを見る]」に置き換わり、Developer Layer で全文が読める
-- [ ] 応答中にクリックするとタイプライターがスキップされ、ターン終了で ▼ が点滅する
-- [ ] 送信中に Esc を押すと `session/cancel` が送られ、Agent State が `idle` に戻る
-- [ ] Markdown に含まれる HTML / スクリプトが実行されない
+- [ ] 応答が段落ごとにタイプライター表示され、コードブロックは「[コードを見る]」に置き換わり、ログパネルで全文が読める
+- [ ] 応答中のクリックでスキップ、ターン終了で ▼
+- [ ] Esc で `session/cancel` が送られ、状態が `idle` に戻る
+- [ ] Markdown 内の HTML / スクリプトが実行されない
 
-### 表情
+### 表情・アニメーション
 
-- [ ] 送信直後に `thinking.png`、tool call 実行中も `thinking.png`、`end_turn` で `happy.png`、約 4 秒後に `normal.png` に戻る
-- [ ] `character.json` の `expressions` から `happy` を削除しても、アプリがエラーにならず `normal.png` が表示される
-- [ ] 表情切替時に画像のチラつき(空白フレーム)が出ない
+- [ ] 送信直後と tool call 中は `thinking.png`、`end_turn` で `happy.png`、数秒後に `normal.png`
+- [ ] `character.json` から `happy` を消してもエラーにならず `normal.png` が出る
+- [ ] 目閉じ差分があれば数秒おきに瞬きし、口開き差分があればタイプライター中だけ口が動く
+- [ ] 切替時に空白フレームが出ない
 
 ### permission
 
-- [ ] Agent がファイル編集を要求すると、台詞ウィンドウに ACP の options(例: Allow / Always allow / Reject)が選択肢として表示され、名前欄横が「承認待ち」になる
-- [ ] 「変更内容を見る」で Developer Layer に diff が表示される
-- [ ] 数字キーと Enter で選択でき、選択後に Agent が処理を続行する
-- [ ] Esc でキャンセルすると `outcome: cancelled` が返り、Agent がそれを拒否として扱う
-- [ ] permission 待ちの間、ユーザー入力欄は無効化され、選択肢以外の操作で状態が壊れない
+- [ ] ファイル編集の要求が選択肢として出て、名前欄横が「承認待ち」になる
+- [ ] 「変更内容を見る」でログパネルに diff が出る
+- [ ] 数字キーと Enter で選べ、選択後に処理が続く。Esc で `cancelled` が返る
+- [ ] 承認待ちの間、入力欄が無効化される
 
-### Developer Layer
+### 口調
 
-- [ ] tool call ごとに kind / title / status が表示され、completed / failed で見た目が変わる
-- [ ] `content.diff` を含む tool call で、追加 / 削除行が色分けされた diff が表示される
-- [ ] terminal を含む tool call で、コマンド出力が表示される
-- [ ] 全文トランスクリプトと台詞の内容が食い違わない(台詞は全文の部分集合)
-
-### 設定・配布
-
-- [ ] `agents.json` の args のバージョンを変えると、次回接続でそのバージョンが起動する
-- [ ] キャラクターパックのフォルダを切り替えると、再起動なしで立ち絵が変わる
-- [ ] NSIS インストーラのサイズが 30MB 未満(Node と Agent は含まない)
+- [ ] output style を置くと、ターミナルの `claude` と ACP 経由の両方で口調が変わる(変わらなければその旨をドキュメントに記録し、フォールバックに切り替える)
+- [ ] 口調を付けても、ファイル編集・テスト実行などの動作が変わらない
 
 ---
 
-## 4. MVP 後の最初の拡張候補(順不同、YAGNI を守る)
+## 5. MVP の後で考えること
 
-- Codex(`codex-acp`)での動作検証と、Agent ごとのキャラクター割り当て
-- `confused` / `surprised` 表情の追加(`error` / `waiting_permission` に割り当て)
-- `session/load` によるセッション再開
-- plan の描画(クエストログ)
-- ACP `terminal/*` の実装(ターミナル出力を Developer Layer にストリーム表示)
-- 瞬き、背景画像、トランジション
+- Codex(`codex-acp`)で同じ UI が動くか
+- `confused` / `surprised` の追加
+- Tauri か Electron で包む(UI と接続コードはそのまま)
+- `session/load` によるセッション再開、plan の表示

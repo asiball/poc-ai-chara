@@ -1,6 +1,8 @@
 # 既存プロジェクト調査
 
 調査日: 2026-09-16
+
+> この調査は当初「配布も視野に入れた汎用クライアント」を前提に行った。その後プロジェクトは「自分用」に絞ったため、§3 の GUI クライアント一覧や §4 の利用条件の一部(ブランド規約、配布時の認証方針)は参考情報の位置づけになる。結論(§6)と ACP まわり(§4)は自分用でもそのまま有効。
 方法: GitHub リポジトリ(README・ソース)、公式ドキュメント、npm / crates.io、検索結果。
 本セッションの実行環境では X / Reddit / Hacker News / YouTube / Zenn / Qiita / note / 一部の公式サイト
 (agentclientprotocol.com、zed.dev、developers.openai.com、support.claude.com など)が取得できなかったため、

@@ -1,6 +1,6 @@
-# ADR-0004: Novel Layer と Developer Layer を分離し、実用を優先する
+# ADR-0004: Novel View と Log View を分離し、実用を優先する
 
-- 日付: 2026-09-16
+- 日付: 2026-09-16(2026-09-17 に口調の扱いを更新)
 - 状態: 採用(MVP)
 
 ## 背景
@@ -12,19 +12,19 @@
 ## 決定
 
 1. **同一の Session Store を読む 2 つのビューを持つ**
-   - Novel Layer: 立ち絵、名前欄、台詞、選択肢、状態インジケータ。テキスト送りはここだけ
-   - Developer Layer: Markdown 全文、コード、diff、tool call、terminal 出力、plan、エラー、stderr。即時全文表示
+   - Novel View: 立ち絵、名前欄、台詞、選択肢、状態インジケータ。テキスト送りはここだけ
+   - Log View: Markdown 全文、コード、diff、tool call、terminal 出力、plan、エラー、stderr。即時全文表示
 2. **Agent の応答を Markdown ブロック単位で機械的に振り分ける**(LLM を使わない)
    - 段落・見出し・短い箇条書き → 台詞
    - コードブロック・表・長いリスト・diff → 詳細。台詞側には「[コードを見る]」等のリンクだけ残す
-3. **permission は選択肢として Novel Layer に出す**が、選択肢の文言は ACP の `options[].name` をそのまま使い、詳細(diff)は Developer Layer で確認できるようにする
-4. **両立しない場合は Developer Layer(実用)を優先する**。Novel Layer は要約に留め、情報を落とさない(台詞は全文の部分集合)
-5. **台詞は Agent の出力をそのまま使う**。キャラクターの口調に書き換えない。LLM による要約・感情判定も MVP では行わない
+3. **permission は選択肢として Novel View に出す**が、選択肢の文言は ACP の `options[].name` をそのまま使い、詳細(diff)は Log View で確認できるようにする
+4. **両立しない場合は Log View(実用)を優先する**。Novel View は要約に留め、情報を落とさない(台詞は全文の部分集合)
+5. **台詞は Agent の出力をそのまま使う**。アプリ側で LLM に書き換えさせたり要約させたりしない。口調を付けたい場合は Agent 側の設定(Claude Code の output style、`_meta.systemPrompt.append`、Codex の AGENTS.md)で「一人称・語尾・呼び方」程度に留め、コーディング指示は保つ(`docs/architecture.md` §8.4)
 6. **表情は Agent State からの機械的マッピング**。将来、感情推定や Agent 自身の指定を重ねる余地は残す
 
 ## 理由
 
-- 「AI に人格を付ける」ではなく「やり取りを ADV 文法で表現する」が中心コンセプトであり、Agent の出力を改変しない方がコンセプトに忠実で、コーディング能力の劣化(AvatarCode の system prompt 置換のような副作用)も避けられる
+- 「AI に人格を付ける」ではなく「やり取りを ADV 文法で表現する」が中心であり、Agent の出力をアプリが改変しない方がコンセプトに忠実。口調は Agent 側の設定で軽く付けるに留め、system prompt の置換(AvatarCode 方式)によるコーディング能力の劣化を避ける
 - Pipsqueak の「Claude が書いた直近の一文をそのまま出す」方式は、捏造なしで自然な台詞を作れることを示している
 - ノベルゲームの「バックログ」は、開発ツールの「全文トランスクリプト」とそのまま対応する。ユーザーの既存のメンタルモデルを利用できる
 - テキスト送りをオート既定にすることで、開発ツールとしての待ち時間を増やさない
@@ -32,14 +32,16 @@
 ## 反対意見と扱い
 
 - **タイプライターとページ送りは、長い応答では煩わしい**
-  → オート既定、クリックでスキップ、設定で OFF 可。Developer Layer は常に即時表示
+  → オート既定、クリックでスキップ、設定で OFF 可。Log View は常に即時表示
 - **台詞 / 詳細の機械的分割は、文脈によっては不自然になる**(「以下のコードを見て」の直後にコードが詳細へ行く)
   → リンクを台詞のその位置に挿入することで文脈を保つ。分割ルールはヒューリスティックとして単体テストで固定し、改善は後から
 - **選択肢の文言をキャラクターの口調にしたい**
   → 意味がずれると承認事故になる。文言は ACP のまま、台詞側で「〜してもいい?」と前置きするに留める
+- **口調を付けるとコード品質が落ちるのでは**
+  → output style の `keep-coding-instructions: true` でコーディング指示を保つ。受け入れ条件に「口調を付けても動作が変わらない」を置く
 
 ## 結果
 
 - Session Store の `agent_message.segments`(speech / code / detail)
-- Novel Layer と Developer Layer のコンポーネント分離(`docs/architecture.md` §9、§10)
+- Novel View と Log View のコンポーネント分離(`docs/architecture.md` §9、§10)
 - 受け入れ条件「台詞は全文の部分集合」「Markdown が実行されない」(`docs/mvp.md` §3)

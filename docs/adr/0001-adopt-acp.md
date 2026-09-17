@@ -25,7 +25,7 @@
 1. **MVP の要件を全て満たす**。permission(options 付き)、tool call、`content.diff`、terminal、session resume、cwd、modes が ACP v1 で揃う。Agent SDK 直結では diff を Edit ツール入力から自前解釈する必要があり、`codex exec` では承認ができない
 2. **ノベル UI の描画プリミティブと 1 対 1 で対応する**。台詞 = message chunk、思考 = thought chunk、演出 = tool_call、選択肢 = request_permission、クエストログ = plan。Agent ごとに写像を書く必要がない
 3. **Agent 差し替えが設定 1 行**。Claude Code / Codex / Gemini CLI がすべて ACP Agent として存在し、ACP UI は 11 Agent を同じコードで扱っている。「Agent ごとにキャラクターを割り当てる」将来像に直結する
-4. **実装コストが最小**。公式 TypeScript SDK(`@agentclientprotocol/sdk`、Web Streams 対応)があり、Windows のプロセス起動は ACP UI(MIT)の Rust コードを流用できる
+4. **実装コストが最小**。公式 TypeScript SDK(`@agentclientprotocol/sdk`、Web Streams 対応)があり、Windows のプロセス起動は ACP UI(MIT)などに先例がある
 5. **エコシステムが安定している**。Zed と JetBrains の共同ガバナンス、protocolVersion 1 は安定版、SDK 1.0 リリース済み、Registry に約 50 Agent
 
 ## 反対意見と扱い
@@ -42,6 +42,6 @@
 ## 結果
 
 - `AgentBackend` interface + `AcpBackend` 実装(`docs/architecture.md` §7)
-- `agents.json` は ACP UI と互換の形式
+- Agent の起動コマンドは設定ファイルに置き、Codex 等への切り替えは設定変更だけで済ませる
 - 内部イベントは ACP v1 語彙
 - 将来の固有バックエンドは同じ interface で追加。UI に手を入れない
